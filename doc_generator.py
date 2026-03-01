@@ -18,7 +18,6 @@ def set_font(cell, bold=False):
             run.font.size = Pt(14)
             run.bold = bold
 
-            # Required for proper font rendering in MS Word
             r = run._element
             r.rPr.rFonts.set(qn('w:eastAsia'), 'Times New Roman')
 
@@ -37,7 +36,7 @@ def add_table_borders(table):
             for border_name in ['top', 'left', 'bottom', 'right']:
                 border = OxmlElement(f'w:{border_name}')
                 border.set(qn('w:val'), 'single')
-                border.set(qn('w:sz'), '8')   # thickness
+                border.set(qn('w:sz'), '8')
                 border.set(qn('w:space'), '0')
                 border.set(qn('w:color'), '000000')
                 tcBorders.append(border)
@@ -45,12 +44,11 @@ def add_table_borders(table):
             tcPr.append(tcBorders)
 
 
-# ---------------------------------------------------
-# Generate Individual Supervision Document
-# ---------------------------------------------------
+# ===================================================
+# UPLOAD MODE (Institutional Matrix Excel)
+# ===================================================
 def generate_individual_doc(faculty, schedule, analysis, template_file=None):
 
-    # Use template if uploaded
     if template_file is not None:
         doc = Document(template_file)
     else:
@@ -69,9 +67,7 @@ def generate_individual_doc(faculty, schedule, analysis, template_file=None):
                 run.font.name = "Times New Roman"
                 run.font.size = Pt(14)
 
-    # ---------------------------------------------------
     # Replace Template Placeholders
-    # ---------------------------------------------------
     for paragraph in doc.paragraphs:
 
         if "{{NAME}}" in paragraph.text:
@@ -84,15 +80,12 @@ def generate_individual_doc(faculty, schedule, analysis, template_file=None):
             run.font.name = "Times New Roman"
             run.font.size = Pt(14)
 
-    # ---------------------------------------------------
     # Add Supervision Table
-    # ---------------------------------------------------
     table = doc.add_table(rows=1, cols=4)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
     headers = ["Sr.No", "Date", "Session", "Time"]
 
-    # Header row (Bold)
     for i, header in enumerate(headers):
         table.rows[0].cells[i].text = header
         set_font(table.rows[0].cells[i], bold=True)
@@ -114,19 +107,87 @@ def generate_individual_doc(faculty, schedule, analysis, template_file=None):
                 row_cells[3].text = session_time
 
                 for cell in row_cells:
-                    set_font(cell, bold=False)
+                    set_font(cell)
 
                 sr += 1
 
-    # Add borders to entire table
     add_table_borders(table)
 
     return doc
 
 
-# ---------------------------------------------------
-# Combine All Individual Documents Cleanly
-# ---------------------------------------------------
+# ===================================================
+# AUTO MODE (Flat Master DataFrame)
+# ===================================================
+def generate_individual_doc_auto(faculty_name, faculty_department, master_df, template_file=None):
+
+    if template_file is not None:
+        doc = Document(template_file)
+    else:
+        doc = Document()
+
+        heading = doc.add_heading("Individual Supervision Chart", level=1)
+        for run in heading.runs:
+            run.font.name = "Times New Roman"
+            run.font.size = Pt(14)
+
+        p1 = doc.add_paragraph(f"Name: {faculty_name}")
+        p2 = doc.add_paragraph(f"Department: {faculty_department}")
+
+        for paragraph in [p1, p2]:
+            for run in paragraph.runs:
+                run.font.name = "Times New Roman"
+                run.font.size = Pt(14)
+
+    # Replace placeholders
+    for paragraph in doc.paragraphs:
+
+        if "{{NAME}}" in paragraph.text:
+            paragraph.text = paragraph.text.replace("{{NAME}}", str(faculty_name))
+
+        if "{{DEPARTMENT}}" in paragraph.text:
+            paragraph.text = paragraph.text.replace("{{DEPARTMENT}}", str(faculty_department))
+
+        for run in paragraph.runs:
+            run.font.name = "Times New Roman"
+            run.font.size = Pt(14)
+
+    faculty_schedule = master_df[
+        master_df["Name of faculty"] == faculty_name
+    ]
+
+    table = doc.add_table(rows=1, cols=4)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+    headers = ["Sr.No", "Date", "Session", "Time"]
+
+    for i, header in enumerate(headers):
+        table.rows[0].cells[i].text = header
+        set_font(table.rows[0].cells[i], bold=True)
+
+    sr = 1
+
+    for _, row in faculty_schedule.iterrows():
+
+        row_cells = table.add_row().cells
+        row_cells[0].text = str(sr)
+        row_cells[1].text = str(row["Date"])
+        row_cells[2].text = str(row["Session"])
+        row_cells[3].text = str(row["Time"])
+
+        for cell in row_cells:
+            set_font(cell)
+
+        sr += 1
+
+    add_table_borders(table)
+
+    return doc
+
+
+# ===================================================
+# COMBINE DOCUMENTS
+# ===================================================
 def combine_documents(individual_docs):
 
     master_doc = Document()
@@ -134,7 +195,6 @@ def combine_documents(individual_docs):
 
     for _, doc in individual_docs:
 
-        # Add page break BEFORE every document except first
         if not first:
             master_doc.add_page_break()
 
