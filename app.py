@@ -12,9 +12,9 @@ from duty_allocator import generate_master_supervision
 st.set_page_config(page_title="Supervision Chart Generator", layout="wide")
 st.title("📋 Supervision Chart Generator")
 
-# ==============================
+# =========================================================
 # MODE SELECTION
-# ==============================
+# =========================================================
 
 mode = st.radio(
     "Choose Mode",
@@ -27,7 +27,7 @@ template_file = st.file_uploader(
 )
 
 # =========================================================
-# MODE 1: UPLOAD MASTER SUPERVISION (EXISTING SYSTEM)
+# MODE 1: UPLOAD MASTER SUPERVISION (OLD SYSTEM - UNCHANGED)
 # =========================================================
 
 if mode == "Upload Master Supervision":
@@ -94,9 +94,29 @@ elif mode == "Auto Generate Master Supervision":
 
         teacher_df = pd.read_excel(teacher_file)
 
-        if "Name of faculty" not in teacher_df.columns or "Department" not in teacher_df.columns:
+        # ===============================
+        # SMART COLUMN CLEANING (FIXED)
+        # ===============================
+
+        teacher_df.columns = teacher_df.columns.str.strip()
+        teacher_df.columns = teacher_df.columns.str.replace('\n', '', regex=True)
+
+        # Case-insensitive check
+        columns_lower = [col.lower() for col in teacher_df.columns]
+
+        if "name of faculty" not in columns_lower or "department" not in columns_lower:
+            st.write("Detected Columns:", teacher_df.columns.tolist())
             st.error("Excel must contain columns: 'Name of faculty' and 'Department'")
         else:
+            # Rename to exact expected format
+            rename_map = {}
+            for col in teacher_df.columns:
+                if col.lower() == "name of faculty":
+                    rename_map[col] = "Name of faculty"
+                if col.lower() == "department":
+                    rename_map[col] = "Department"
+
+            teacher_df.rename(columns=rename_map, inplace=True)
 
             st.success("Faculty file loaded successfully ✅")
 
