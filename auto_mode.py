@@ -6,7 +6,7 @@ from analyzer import analyze_excel
 from schedule_builder import build_schedule
 from faculty_processor import extract_faculty_data
 import doc_generator
-from duty_allocator import generate_master_supervision
+from duty_allocator import generate_master_supervision_global
 
 
 def run_auto_mode():
@@ -28,8 +28,6 @@ def run_auto_mode():
 
     teacher_df.columns = teacher_df.columns.str.strip()
     teacher_df.columns = teacher_df.columns.str.replace('\n', '', regex=True)
-
-    teacher_df.rename(columns=lambda x: x.strip(), inplace=True)
 
     if "Name of faculty" not in teacher_df.columns or "Department" not in teacher_df.columns:
         st.error("Excel must contain columns: 'Name of faculty' and 'Department'")
@@ -123,35 +121,22 @@ def run_auto_mode():
     )
 
     # ==================================================
-    # GENERATE MASTER
+    # GENERATE MASTER (GLOBAL BALANCING)
     # ==================================================
 
     if st.button("Generate Master Supervision"):
 
-        full_master = pd.DataFrame()
+        if not allocation_blocks:
+            st.error("Please add at least one allocation block")
+            return
 
         try:
-            for block in allocation_blocks:
-
-                formatted_date = pd.to_datetime(block["Date"])
-
-                schedule_list = [{
-                    "Date": formatted_date.strftime("%d-%m-%Y"),
-                    "Day": formatted_date.day_name(),
-                    "Session": block["Session"],
-                    "Time": block["Time"]
-                }]
-
-                master_df = generate_master_supervision(
-                    teacher_df=teacher_df,
-                    schedule_list=schedule_list,
-                    supervisors_required=block["Supervisors"],
-                    avoid_list=block["Avoid"],
-                    priority_list=priority_list,
-                    allow_two_duties=allow_two_duties,
-                )
-
-                full_master = pd.concat([full_master, master_df])
+            full_master = generate_master_supervision_global(
+                teacher_df=teacher_df,
+                allocation_blocks=allocation_blocks,
+                allow_two_duties=allow_two_duties,
+                priority_list=priority_list
+            )
 
             st.session_state["generated_master"] = full_master
             st.success("Master Supervision Generated ✅")
