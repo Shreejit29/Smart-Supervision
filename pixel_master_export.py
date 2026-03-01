@@ -1,14 +1,18 @@
+import os
 from openpyxl import load_workbook
-from openpyxl.styles import Alignment
 from io import BytesIO
 import pandas as pd
 
 
-def export_pixel_perfect(master_df, template_path):
-    """
-    master_df: Generated master supervision dataframe
-    template_path: Path to original institutional format file
-    """
+def export_pixel_perfect(master_df):
+
+    # Get template path relative to this file
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    template_path = os.path.join(
+        BASE_DIR,
+        "templates",
+        "SEM_2_and_4_Regular_Format.xlsx"
+    )
 
     wb = load_workbook(template_path)
     ws = wb.active
@@ -19,9 +23,8 @@ def export_pixel_perfect(master_df, template_path):
 
     faculty_row_map = {}
 
-    row = 3  # Faculty starts from row 3 (based on your format)
+    row = 3
     while ws.cell(row=row, column=2).value:
-
         faculty_name = ws.cell(row=row, column=2).value
         faculty_row_map[faculty_name] = row
         row += 1
@@ -32,23 +35,22 @@ def export_pixel_perfect(master_df, template_path):
 
     date_col_map = {}
 
-    col = 4  # Dates start from column 4
+    col = 4
     while ws.cell(row=1, column=col).value:
-
         date_text = ws.cell(row=1, column=col).value
         date_col_map[date_text] = col
-        col += 2  # Each date takes 2 columns (Session I & II)
+        col += 2
 
     # ------------------------------
-    # Clear Existing 1s
+    # Clear old data
     # ------------------------------
 
     for r in faculty_row_map.values():
-        for c in range(4, ws.max_column + 1):
+        for c in range(4, ws.max_column):
             ws.cell(row=r, column=c).value = None
 
     # ------------------------------
-    # Fill Supervision Data
+    # Fill supervision data
     # ------------------------------
 
     for _, row_data in master_df.iterrows():
@@ -79,7 +81,7 @@ def export_pixel_perfect(master_df, template_path):
         ).value = 1
 
     # ------------------------------
-    # Recalculate Totals
+    # Recalculate totals
     # ------------------------------
 
     total_col = ws.max_column
