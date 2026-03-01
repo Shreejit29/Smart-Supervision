@@ -21,6 +21,10 @@ def run_auto_mode():
     if not teacher_file:
         return
 
+    # =========================
+    # Load Teacher Data
+    # =========================
+
     teacher_df = pd.read_excel(teacher_file)
 
     teacher_df.columns = teacher_df.columns.str.strip()
@@ -32,9 +36,9 @@ def run_auto_mode():
 
     st.success("Faculty file loaded successfully ✅")
 
-    # ==============================
+    # =========================
     # SESSION TYPES
-    # ==============================
+    # =========================
 
     st.markdown("## Define Session Types")
 
@@ -71,9 +75,9 @@ def run_auto_mode():
         if s["name"]
     }
 
-    # ==============================
-    # ALLOCATION BLOCKS
-    # ==============================
+    # =========================
+    # ALLOCATIONS
+    # =========================
 
     st.markdown("## Date-wise Allocation")
 
@@ -109,18 +113,14 @@ def run_auto_mode():
             key=f"session_{i}"
         )
 
+        # Delete allocation
         if col3.button("❌", key=f"del_alloc_{i}"):
             st.session_state.allocations.pop(i)
             st.rerun()
 
+        # Duplicate allocation
         if col4.button("📄", key=f"dup_alloc_{i}"):
-            new_block = {
-                "date": block["date"],
-                "session": block["session"],
-                "supervisors": block["supervisors"],
-                "avoid": block["avoid"].copy()
-            }
-            st.session_state.allocations.append(new_block)
+            st.session_state.allocations.append(block.copy())
             st.rerun()
 
         if block["session"] in session_dict:
@@ -147,9 +147,9 @@ def run_auto_mode():
         teacher_df["Name of faculty"].tolist()
     )
 
-    # ==============================
+    # =========================
     # GENERATE MASTER
-    # ==============================
+    # =========================
 
     if st.button("Generate Master Supervision"):
 
@@ -174,22 +174,22 @@ def run_auto_mode():
             })
 
         try:
-            full_master = generate_master_supervision_global(
+            master_df = generate_master_supervision_global(
                 teacher_df=teacher_df,
                 allocation_blocks=allocation_blocks,
                 allow_two_duties=allow_two_duties,
                 priority_list=priority_list
             )
 
-            st.session_state.generated_master = full_master
+            st.session_state.generated_master = master_df
             st.success("Master Supervision Generated ✅")
 
         except Exception as e:
             st.error(str(e))
 
-    # ==============================
-    # PREVIEW + EXPORT + INDIVIDUAL
-    # ==============================
+    # =========================
+    # PREVIEW + EXPORT + DOC
+    # =========================
 
     if "generated_master" in st.session_state:
 
@@ -209,7 +209,7 @@ def run_auto_mode():
 
         st.dataframe(duty_summary)
 
-        # -------- Normal Excel Export --------
+        # -------- Excel Export --------
         sorted_master = edited_master.sort_values(
             by=["Date", "Session", "Name of faculty"]
         )
@@ -228,47 +228,45 @@ def run_auto_mode():
         # -------- Generate Individual Charts --------
         if st.button("Confirm & Generate Individual Charts"):
 
-    try:
-        faculty_list = sorted_master["Name of faculty"].unique()
+            try:
+                individual_docs = []
 
-        individual_docs = []
+                faculty_names = sorted_master["Name of faculty"].unique()
 
-        for faculty_name in faculty_list:
+                for faculty_name in faculty_names:
 
-            faculty_schedule = sorted_master[
-                sorted_master["Name of faculty"] == faculty_name
-            ]
+                    faculty_schedule = sorted_master[
+                        sorted_master["Name of faculty"] == faculty_name
+                    ]
 
-            faculty_department = faculty_schedule["Department"].iloc[0]
+                    faculty_department = faculty_schedule["Department"].iloc[0]
 
-            faculty_data = {
-                "name": faculty_name,
-                "department": faculty_department,
-                "data": faculty_schedule
-            }
+                    faculty_data = {
+                        "name": faculty_name,
+                        "department": faculty_department
+                    }
 
-            doc = doc_generator.generate_individual_doc(
-                faculty_data,
-                faculty_schedule,
-                sorted_master,
-                template_file
-            )
+                    doc = doc_generator.generate_individual_doc(
+                        faculty_data,
+                        sorted_master,
+                        sorted_master,
+                        template_file
+                    )
 
-            individual_docs.append((faculty_name, doc))
+                    individual_docs.append((faculty_name, doc))
 
-        master_doc = doc_generator.combine_documents(individual_docs)
+                master_doc = doc_generator.combine_documents(individual_docs)
 
-        buffer = BytesIO()
-        master_doc.save(buffer)
-        buffer.seek(0)
+                buffer = BytesIO()
+                master_doc.save(buffer)
+                buffer.seek(0)
 
-        st.download_button(
-            label="📥 Download Supervision Charts",
-            data=buffer,
-            file_name="Supervision_Charts.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+                st.download_button(
+                    label="📥 Download Supervision Charts",
+                    data=buffer,
+                    file_name="Supervision_Charts.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
 
-    except Exception as e:
-        st.error(str(e))
-       
+            except Exception as e:
+                st.error(str(e))
