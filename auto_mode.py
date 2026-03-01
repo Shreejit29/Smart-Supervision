@@ -91,20 +91,25 @@ def run_auto_mode():
             st.rerun()
 
         if col4.button("📄", key=f"dup_alloc_{i}"):
-            st.session_state.allocations.append(block.copy())
+            st.session_state.allocations.append({
+                "date": block["date"],
+                "session": block["session"],
+                "supervisors": block["supervisors"],
+                "avoid": block["avoid"].copy()
+            })
             st.rerun()
 
         if block["session"] in session_dict:
             st.markdown(f"**Time:** {session_dict[block['session']]}")
 
-        block["supervisors"] = st.number_input(
+        block["supervisors"] = col1.number_input(
             "Number of Supervisors",
             min_value=1,
             value=block["supervisors"],
             key=f"sup_{i}"
         )
 
-        block["avoid"] = st.multiselect(
+        block["avoid"] = col2.multiselect(
             "Avoid Teachers",
             teacher_df["Name of faculty"].tolist(),
             default=block["avoid"],
@@ -118,9 +123,22 @@ def run_auto_mode():
 
     if st.button("Generate Master Supervision"):
 
+        if not session_dict:
+            st.error("Please define at least one session.")
+            return
+
+        if not st.session_state.allocations:
+            st.error("Please add at least one allocation.")
+            return
+
         allocation_blocks = []
 
         for block in st.session_state.allocations:
+
+            if not block["date"] or not block["session"]:
+                st.error("Please complete all allocation fields.")
+                return
+
             allocation_blocks.append({
                 "Date": block["date"],
                 "Session": block["session"],
@@ -129,15 +147,19 @@ def run_auto_mode():
                 "Avoid": block["avoid"]
             })
 
-        master_df = generate_master_supervision_global(
-            teacher_df=teacher_df,
-            allocation_blocks=allocation_blocks,
-            allow_two_duties=allow_two_duties,
-            priority_list=priority_list
-        )
+        try:
+            master_df = generate_master_supervision_global(
+                teacher_df=teacher_df,
+                allocation_blocks=allocation_blocks,
+                allow_two_duties=allow_two_duties,
+                priority_list=priority_list
+            )
 
-        st.session_state.generated_master = master_df
-        st.success("Master Supervision Generated ✅")
+            st.session_state.generated_master = master_df
+            st.success("Master Supervision Generated ✅")
+
+        except Exception as e:
+            st.error(str(e))
 
     # ================= PREVIEW =================
 
@@ -153,37 +175,43 @@ def run_auto_mode():
         st.download_button(
             "📥 Download Master Supervision (Excel)",
             buffer,
-            "Master_Supervision.xlsx"
+            "Master_Supervision.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
         # Individual Charts
         if st.button("Confirm & Generate Individual Charts"):
 
-            individual_docs = []
+            try:
+                individual_docs = []
 
-            for faculty_name in edited_master["Name of faculty"].unique():
+                for faculty_name in edited_master["Name of faculty"].unique():
 
-                faculty_department = edited_master[
-                    edited_master["Name of faculty"] == faculty_name
-                ]["Department"].iloc[0]
+                    faculty_department = edited_master[
+                        edited_master["Name of faculty"] == faculty_name
+                    ]["Department"].iloc[0]
 
-                doc = doc_generator.generate_individual_doc_auto(
-                    faculty_name,
-                    faculty_department,
-                    edited_master,
-                    template_file
+                    doc = doc_generator.generate_individual_doc_auto(
+                        faculty_name,
+                        faculty_department,
+                        edited_master,
+                        template_file
+                    )
+
+                    individual_docs.append((faculty_name, doc))
+
+                master_doc = doc_generator.combine_documents(individual_docs)
+
+                buffer = BytesIO()
+                master_doc.save(buffer)
+                buffer.seek(0)
+
+                st.download_button(
+                    "📥 Download Supervision Charts",
+                    buffer,
+                    "Supervision_Charts.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 )
 
-                individual_docs.append((faculty_name, doc))
-
-            master_doc = doc_generator.combine_documents(individual_docs)
-
-            buffer = BytesIO()
-            master_doc.save(buffer)
-            buffer.seek(0)
-
-            st.download_button(
-                "📥 Download Supervision Charts",
-                buffer,
-                "Supervision_Charts.docx"
-            )
+            except Exception as e:
+                st.error(str(e))
