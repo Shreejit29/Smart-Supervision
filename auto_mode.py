@@ -228,43 +228,47 @@ def run_auto_mode():
         # -------- Generate Individual Charts --------
         if st.button("Confirm & Generate Individual Charts"):
 
-            try:
-                faculty_list = sorted_master["Name of faculty"].unique()
+    try:
+        faculty_list = sorted_master["Name of faculty"].unique()
 
-                individual_docs = []
+        individual_docs = []
 
-                for faculty_name in faculty_list:
+        for faculty_name in faculty_list:
 
-                    faculty_schedule = sorted_master[
-                        sorted_master["Name of faculty"] == faculty_name
-                    ]
+            faculty_schedule = sorted_master[
+                sorted_master["Name of faculty"] == faculty_name
+            ]
 
-                    faculty_data = {
-                        "name": faculty_name,
-                        "data": faculty_schedule
-                    }
+            faculty_department = faculty_schedule["Department"].iloc[0]
 
-                    doc = doc_generator.generate_individual_doc(
-                        faculty_data,
-                        faculty_schedule,
-                        sorted_master,
-                        template_file
-                    )
+            faculty_data = {
+                "name": faculty_name,
+                "department": faculty_department,
+                "data": faculty_schedule
+            }
 
-                    individual_docs.append((faculty_name, doc))
+            doc = doc_generator.generate_individual_doc(
+                faculty_data,
+                faculty_schedule,
+                sorted_master,
+                template_file
+            )
 
-                master_doc = doc_generator.combine_documents(individual_docs)
+            individual_docs.append((faculty_name, doc))
 
-                buffer = BytesIO()
-                master_doc.save(buffer)
-                buffer.seek(0)
+        master_doc = doc_generator.combine_documents(individual_docs)
 
-                st.download_button(
-                    label="📥 Download Supervision Charts",
-                    data=buffer,
-                    file_name="Supervision_Charts.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                )
+        buffer = BytesIO()
+        master_doc.save(buffer)
+        buffer.seek(0)
 
-            except Exception as e:
-                st.error(str(e))
+        st.download_button(
+            label="📥 Download Supervision Charts",
+            data=buffer,
+            file_name="Supervision_Charts.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+
+    except Exception as e:
+        st.error(str(e))
+       
