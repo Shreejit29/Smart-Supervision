@@ -6,7 +6,6 @@ from analyzer import analyze_excel
 from schedule_builder import build_schedule
 from faculty_processor import extract_faculty_data
 import doc_generator
-
 from duty_allocator import generate_master_supervision
 
 st.set_page_config(page_title="Supervision Chart Generator", layout="wide")
@@ -27,7 +26,7 @@ template_file = st.file_uploader(
 )
 
 # =========================================================
-# MODE 1: UPLOAD MASTER SUPERVISION (OLD SYSTEM - UNCHANGED)
+# MODE 1: UPLOAD MASTER SUPERVISION (UNCHANGED SYSTEM)
 # =========================================================
 
 if mode == "Upload Master Supervision":
@@ -94,72 +93,84 @@ elif mode == "Auto Generate Master Supervision":
 
         teacher_df = pd.read_excel(teacher_file)
 
-        # ===============================
-        # SMART COLUMN CLEANING (FIXED)
-        # ===============================
-
+        # Clean column names
         teacher_df.columns = teacher_df.columns.str.strip()
         teacher_df.columns = teacher_df.columns.str.replace('\n', '', regex=True)
 
-        # Case-insensitive check
         columns_lower = [col.lower() for col in teacher_df.columns]
 
         if "name of faculty" not in columns_lower or "department" not in columns_lower:
             st.write("Detected Columns:", teacher_df.columns.tolist())
             st.error("Excel must contain columns: 'Name of faculty' and 'Department'")
         else:
-            # Rename to exact expected format
+            # Standardize column names
             rename_map = {}
             for col in teacher_df.columns:
                 if col.lower() == "name of faculty":
                     rename_map[col] = "Name of faculty"
                 if col.lower() == "department":
                     rename_map[col] = "Department"
-
             teacher_df.rename(columns=rename_map, inplace=True)
 
             st.success("Faculty file loaded successfully ✅")
 
-            # -----------------------------
-            # Schedule Input
-            # -----------------------------
+            # =============================
+            # DEFINE SESSION TYPES
+            # =============================
 
-            num_sessions = st.number_input(
-                "Number of Exam Sessions",
+            st.markdown("## Define Sessions")
+
+            num_session_types = st.number_input(
+                "Number of Session Types",
                 min_value=1,
                 value=1
             )
 
-            schedule_list = []
+            session_definitions = []
 
-            for i in range(int(num_sessions)):
-                st.markdown(f"### Session {i+1}")
+            for i in range(int(num_session_types)):
 
-                col1, col2 = st.columns(2)
-                date = col1.text_input(f"Date {i+1}", key=f"date_{i}")
-                day = col2.text_input(f"Day {i+1}", key=f"day_{i}")
+                st.markdown(f"### Session Type {i+1}")
 
-                col3, col4 = st.columns(2)
-                session_name = col3.text_input(f"Session {i+1}", key=f"session_{i}")
-                time = col4.text_input(f"Time {i+1}", key=f"time_{i}")
+                col1, col2, col3 = st.columns(3)
 
-                schedule_list.append({
-                    "Date": date,
-                    "Day": day,
+                session_name = col1.text_input("Session Name", key=f"sname_{i}")
+                session_time = col2.text_input("Session Time", key=f"stime_{i}")
+                supervisor_count = col3.number_input(
+                    "Supervisors Required",
+                    min_value=1,
+                    value=1,
+                    key=f"scount_{i}"
+                )
+
+                session_avoid = st.multiselect(
+                    f"Avoid Teachers For {session_name}",
+                    teacher_df["Name of faculty"].tolist(),
+                    key=f"savoid_{i}"
+                )
+
+                session_definitions.append({
                     "Session": session_name,
-                    "Time": time
+                    "Time": session_time,
+                    "Supervisors": supervisor_count,
+                    "SessionAvoid": session_avoid
                 })
 
-            supervisors_required = st.number_input(
-                "Supervisors Required Per Session",
-                min_value=1,
-                value=1
+            # =============================
+            # SELECT DATES
+            # =============================
+
+            st.markdown("## Select Exam Dates")
+
+            selected_dates = st.date_input(
+                "Choose Dates",
+                value=[]
             )
 
             allow_two_duties = st.checkbox("Allow 2 Duties Per Day")
 
-            avoid_list = st.multiselect(
-                "Avoid Assigning These Teachers",
+            global_avoid = st.multiselect(
+                "Avoid Teachers (All Sessions)",
                 teacher_df["Name of faculty"].tolist()
             )
 
@@ -168,31 +179,57 @@ elif mode == "Auto Generate Master Supervision":
                 teacher_df["Name of faculty"].tolist()
             )
 
-            # -----------------------------
-            # Generate Master
-            # -----------------------------
+            # =============================
+            # GENERATE MASTER
+            # =============================
 
             if st.button("Generate Master Supervision"):
 
-                try:
-                    master_df = generate_master_supervision(
-                        teacher_df=teacher_df,
-                        schedule_list=schedule_list,
-                        supervisors_required=supervisors_required,
-                        avoid_list=avoid_list,
-                        priority_list=priority_list,
-                        allow_two_duties=allow_two_duties,
-                    )
+                if not selected_dates:
+                    st.error("Please select at least one date")
+                else:
 
-                    st.session_state["generated_master"] = master_df
-                    st.success("Master Supervision Generated ✅")
+                    full_master = pd.DataFrame()
 
-                except Exception as e:
-                    st.error(str(e))
+                    try:
+                        for session_def in session_definitions:
 
-    # ------------------------------------------
-    # PREVIEW + CONFIRM SECTION
-    # ------------------------------------------
+                            schedule_list = []
+
+                            for date in selected_dates:
+                                formatted_date = pd.to_datetime(date)
+
+                                schedule_list.append({
+                                    "Date": formatted_date.strftime("%d-%m-%Y"),
+                                    "Day": formatted_date.day_name(),
+                                    "Session": session_def["Session"],
+                                    "Time": session_def["Time"]
+                                })
+
+                            combined_avoid = list(
+                                set(global_avoid + session_def["SessionAvoid"])
+                            )
+
+                            master_df = generate_master_supervision(
+                                teacher_df=teacher_df,
+                                schedule_list=schedule_list,
+                                supervisors_required=session_def["Supervisors"],
+                                avoid_list=combined_avoid,
+                                priority_list=priority_list,
+                                allow_two_duties=allow_two_duties,
+                            )
+
+                            full_master = pd.concat([full_master, master_df])
+
+                        st.session_state["generated_master"] = full_master
+                        st.success("Master Supervision Generated ✅")
+
+                    except Exception as e:
+                        st.error(str(e))
+
+    # =============================
+    # PREVIEW + SUMMARY + EXPORT
+    # =============================
 
     if "generated_master" in st.session_state:
 
@@ -203,6 +240,32 @@ elif mode == "Auto Generate Master Supervision":
             use_container_width=True
         )
 
+        # -------- Teacher Duty Summary --------
+        st.markdown("## Teacher-wise Duty Count")
+
+        duty_summary = (
+            edited_master["Name of faculty"]
+            .value_counts()
+            .reset_index()
+        )
+
+        duty_summary.columns = ["Name of faculty", "Total Duties"]
+
+        st.dataframe(duty_summary)
+
+        # -------- Export Master Excel --------
+        excel_buffer = BytesIO()
+        edited_master.to_excel(excel_buffer, index=False)
+        excel_buffer.seek(0)
+
+        st.download_button(
+            label="📥 Download Master Supervision (Excel)",
+            data=excel_buffer,
+            file_name="Master_Supervision.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+        # -------- Generate Individual Charts --------
         if st.button("Confirm & Generate Individual Charts"):
 
             analysis, error = analyze_excel(edited_master)
@@ -210,7 +273,6 @@ elif mode == "Auto Generate Master Supervision":
             if error:
                 st.error("Edited Master Format Invalid")
             else:
-
                 schedule = build_schedule(analysis)
                 faculty_list = extract_faculty_data(edited_master, analysis)
 
