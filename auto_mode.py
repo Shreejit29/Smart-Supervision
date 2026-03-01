@@ -2,9 +2,6 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-from analyzer import analyze_excel
-from schedule_builder import build_schedule
-from faculty_processor import extract_faculty_data
 import doc_generator
 from duty_allocator import generate_master_supervision_global
 
@@ -35,9 +32,9 @@ def run_auto_mode():
 
     st.success("Faculty file loaded successfully ✅")
 
-    # ==================================================
-    # SESSION TYPES (Dynamic)
-    # ==================================================
+    # ==============================
+    # SESSION TYPES
+    # ==============================
 
     st.markdown("## Define Session Types")
 
@@ -74,9 +71,9 @@ def run_auto_mode():
         if s["name"]
     }
 
-    # ==================================================
-    # ALLOCATION BLOCKS (Dynamic + Duplicate)
-    # ==================================================
+    # ==============================
+    # ALLOCATION BLOCKS
+    # ==============================
 
     st.markdown("## Date-wise Allocation")
 
@@ -112,12 +109,10 @@ def run_auto_mode():
             key=f"session_{i}"
         )
 
-        # Delete Allocation
         if col3.button("❌", key=f"del_alloc_{i}"):
             st.session_state.allocations.pop(i)
             st.rerun()
 
-        # Duplicate Allocation
         if col4.button("📄", key=f"dup_alloc_{i}"):
             new_block = {
                 "date": block["date"],
@@ -152,9 +147,9 @@ def run_auto_mode():
         teacher_df["Name of faculty"].tolist()
     )
 
-    # ==================================================
-    # GENERATE MASTER (Global Fair Balancing)
-    # ==================================================
+    # ==============================
+    # GENERATE MASTER
+    # ==============================
 
     if st.button("Generate Master Supervision"):
 
@@ -192,9 +187,9 @@ def run_auto_mode():
         except Exception as e:
             st.error(str(e))
 
-    # ==================================================
-    # PREVIEW + EXPORT
-    # ==================================================
+    # ==============================
+    # PREVIEW + EXPORT + INDIVIDUAL
+    # ==============================
 
     if "generated_master" in st.session_state:
 
@@ -233,35 +228,43 @@ def run_auto_mode():
         # -------- Generate Individual Charts --------
         if st.button("Confirm & Generate Individual Charts"):
 
-            analysis, error = analyze_excel(edited_master)
+            try:
+                faculty_list = sorted_master["Name of faculty"].unique()
 
-            if error:
-                st.error("Edited Master Format Invalid")
-                return
+                individual_docs = []
 
-            schedule = build_schedule(analysis)
-            faculty_list = extract_faculty_data(edited_master, analysis)
+                for faculty_name in faculty_list:
 
-            individual_docs = []
+                    faculty_schedule = sorted_master[
+                        sorted_master["Name of faculty"] == faculty_name
+                    ]
 
-            for faculty in faculty_list:
-                doc = doc_generator.generate_individual_doc(
-                    faculty,
-                    schedule,
-                    analysis,
-                    template_file
+                    faculty_data = {
+                        "name": faculty_name,
+                        "data": faculty_schedule
+                    }
+
+                    doc = doc_generator.generate_individual_doc(
+                        faculty_data,
+                        faculty_schedule,
+                        sorted_master,
+                        template_file
+                    )
+
+                    individual_docs.append((faculty_name, doc))
+
+                master_doc = doc_generator.combine_documents(individual_docs)
+
+                buffer = BytesIO()
+                master_doc.save(buffer)
+                buffer.seek(0)
+
+                st.download_button(
+                    label="📥 Download Supervision Charts",
+                    data=buffer,
+                    file_name="Supervision_Charts.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 )
-                individual_docs.append((faculty["name"], doc))
 
-            master_doc = doc_generator.combine_documents(individual_docs)
-
-            buffer = BytesIO()
-            master_doc.save(buffer)
-            buffer.seek(0)
-
-            st.download_button(
-                label="📥 Download Supervision Charts",
-                data=buffer,
-                file_name="Supervision_Charts.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
+            except Exception as e:
+                st.error(str(e))
