@@ -166,11 +166,24 @@ def run_auto_mode():
     if "generated_master" in st.session_state:
 
         edited_master = st.data_editor(st.session_state.generated_master)
-
-        # Excel Export
+        # Add Total Duties Column
+        duty_summary = (
+            edited_master["Name of faculty"]
+            .value_counts()
+            .to_dict()
+        )
+        
+        edited_master["Total Duties"] = edited_master["Name of faculty"].map(duty_summary)
+        
+        # Sort nicely
+        edited_master = edited_master.sort_values(
+            by=["Date", "Session", "Name of faculty"]
+        )
+        
         buffer = BytesIO()
         edited_master.to_excel(buffer, index=False)
         buffer.seek(0)
+        
 
         st.download_button(
             "📥 Download Master Supervision (Excel)",
