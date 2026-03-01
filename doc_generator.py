@@ -5,26 +5,29 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 def generate_individual_doc(faculty, schedule, analysis, template_file=None):
 
     # If template uploaded → use it
-    if template_file:
+    if template_file is not None:
         doc = Document(template_file)
     else:
         doc = Document()
 
-    # -------------------------
-    # Replace placeholders
-    # -------------------------
+        # Default heading if no template
+        doc.add_heading("Individual Supervision Chart", level=1)
+        doc.add_paragraph(f"Name: {faculty['name']}")
+        doc.add_paragraph(f"Department: {faculty['department']}")
 
+    # -----------------------------
+    # Replace template placeholders
+    # -----------------------------
     for paragraph in doc.paragraphs:
         if "{{NAME}}" in paragraph.text:
-            paragraph.text = paragraph.text.replace("{{NAME}}", faculty["name"])
+            paragraph.text = paragraph.text.replace("{{NAME}}", str(faculty["name"]))
 
         if "{{DEPARTMENT}}" in paragraph.text:
             paragraph.text = paragraph.text.replace("{{DEPARTMENT}}", str(faculty["department"]))
 
-    # -------------------------
-    # Add Supervision Table
-    # -------------------------
-
+    # -----------------------------
+    # Add supervision table
+    # -----------------------------
     table = doc.add_table(rows=1, cols=4)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
@@ -51,3 +54,17 @@ def generate_individual_doc(faculty, schedule, analysis, template_file=None):
                 sr += 1
 
     return doc
+
+
+def combine_documents(individual_docs):
+
+    master_doc = Document()
+
+    for i, (_, doc) in enumerate(individual_docs):
+        for element in doc.element.body:
+            master_doc.element.body.append(element)
+
+        if i < len(individual_docs) - 1:
+            master_doc.add_page_break()
+
+    return master_doc
