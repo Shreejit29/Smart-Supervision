@@ -11,7 +11,10 @@ from doc_generator import generate_individual_doc, combine_documents
 st.set_page_config(page_title="Supervision Chart Generator", layout="wide")
 
 st.title("📋 Supervision Chart Generator")
-
+template_file = st.file_uploader(
+    "Upload Word Template (Optional)", 
+    type=["docx"]
+)
 uploaded_file = st.file_uploader("Upload Master Supervision Excel", type=["xlsx", "xls"])
 
 if uploaded_file:
@@ -36,7 +39,13 @@ if uploaded_file:
             individual_docs = []
 
             for faculty in faculty_list:
-                doc = generate_individual_doc(faculty, schedule, analysis)
+               
+                doc = generate_individual_doc(
+                faculty,
+                schedule,
+                analysis,
+                template_file
+                )
                 individual_docs.append((faculty["name"], doc))
 
             master_doc = combine_documents(individual_docs)
