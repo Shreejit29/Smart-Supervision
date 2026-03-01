@@ -36,82 +36,114 @@ def run_auto_mode():
     st.success("Faculty file loaded successfully ✅")
 
     # ==================================================
-    # STEP 1: DEFINE SESSION TYPES
+    # SESSION TYPES (Dynamic)
     # ==================================================
 
     st.markdown("## Define Session Types")
 
-    num_sessions = st.number_input(
-        "Number of Session Types",
-        min_value=1,
-        value=1
-    )
+    if "sessions" not in st.session_state:
+        st.session_state.sessions = []
 
-    session_dict = {}
+    if st.button("➕ Add Session"):
+        st.session_state.sessions.append({"name": "", "time": ""})
+        st.rerun()
 
-    for i in range(int(num_sessions)):
+    for i, session in enumerate(st.session_state.sessions):
 
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns([3, 3, 1])
 
-        s_name = col1.text_input("Session Name", key=f"sname_{i}")
-        s_time = col2.text_input("Session Time", key=f"stime_{i}")
+        session["name"] = col1.text_input(
+            "Session Name",
+            value=session["name"],
+            key=f"sname_{i}"
+        )
 
-        if s_name:
-            session_dict[s_name] = s_time
+        session["time"] = col2.text_input(
+            "Session Time",
+            value=session["time"],
+            key=f"stime_{i}"
+        )
+
+        if col3.button("❌", key=f"del_session_{i}"):
+            st.session_state.sessions.pop(i)
+            st.rerun()
+
+    session_dict = {
+        s["name"]: s["time"]
+        for s in st.session_state.sessions
+        if s["name"]
+    }
 
     # ==================================================
-    # STEP 2: DATE-WISE ALLOCATION BLOCKS
+    # ALLOCATION BLOCKS (Dynamic + Duplicate)
     # ==================================================
 
     st.markdown("## Date-wise Allocation")
 
-    num_allocations = st.number_input(
-        "Number of Allocation Entries",
-        min_value=1,
-        value=1
-    )
+    if "allocations" not in st.session_state:
+        st.session_state.allocations = []
 
-    allocation_blocks = []
+    if st.button("➕ Add Allocation"):
+        st.session_state.allocations.append({
+            "date": None,
+            "session": "",
+            "supervisors": 1,
+            "avoid": []
+        })
+        st.rerun()
 
-    for i in range(int(num_allocations)):
+    for i, block in enumerate(st.session_state.allocations):
 
         st.markdown(f"### Allocation {i+1}")
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
 
-        date = col1.date_input("Date", key=f"date_{i}")
+        block["date"] = col1.date_input(
+            "Date",
+            value=block["date"],
+            key=f"date_{i}"
+        )
 
-        session_choice = col2.selectbox(
+        block["session"] = col2.selectbox(
             "Session",
-            list(session_dict.keys()),
+            list(session_dict.keys()) if session_dict else [""],
+            index=list(session_dict.keys()).index(block["session"])
+            if block["session"] in session_dict else 0,
             key=f"session_{i}"
         )
 
-        time_display = session_dict.get(session_choice, "")
-        col3.markdown(f"**Time:** {time_display}")
+        # Delete
+        if col3.button("❌", key=f"del_alloc_{i}"):
+            st.session_state.allocations.pop(i)
+            st.rerun()
 
-        col4, col5 = st.columns(2)
+        # Duplicate
+        if col4.button("📄", key=f"dup_alloc_{i}"):
+            new_block = {
+                "date": block["date"],
+                "session": block["session"],
+                "supervisors": block["supervisors"],
+                "avoid": block["avoid"].copy()
+            }
+            st.session_state.allocations.append(new_block)
+            st.rerun()
 
-        supervisors_required = col4.number_input(
+        if block["session"] in session_dict:
+            st.markdown(f"**Time:** {session_dict[block['session']]}")
+
+        block["supervisors"] = st.number_input(
             "Number of Supervisors",
             min_value=1,
-            value=1,
+            value=block["supervisors"],
             key=f"sup_{i}"
         )
 
-        avoid_teachers = col5.multiselect(
+        block["avoid"] = st.multiselect(
             "Avoid Teachers (This Allocation)",
             teacher_df["Name of faculty"].tolist(),
+            default=block["avoid"],
             key=f"avoid_{i}"
         )
-
-        allocation_blocks.append({
-            "Date": date,
-            "Session": session_choice,
-            "Time": time_display,
-            "Supervisors": supervisors_required,
-            "Avoid": avoid_teachers
-        })
 
     allow_two_duties = st.checkbox("Allow 2 Duties Per Day")
 
@@ -126,9 +158,25 @@ def run_auto_mode():
 
     if st.button("Generate Master Supervision"):
 
-        if not allocation_blocks:
-            st.error("Please add at least one allocation block")
+        if not st.session_state.allocations:
+            st.error("Please add at least one allocation.")
             return
+
+        allocation_blocks = []
+
+        for block in st.session_state.allocations:
+
+            if not block["date"] or not block["session"]:
+                st.error("Please complete all allocation fields.")
+                return
+
+            allocation_blocks.append({
+                "Date": block["date"],
+                "Session": block["session"],
+                "Time": session_dict.get(block["session"], ""),
+                "Supervisors": block["supervisors"],
+                "Avoid": block["avoid"]
+            })
 
         try:
             full_master = generate_master_supervision_global(
@@ -138,20 +186,20 @@ def run_auto_mode():
                 priority_list=priority_list
             )
 
-            st.session_state["generated_master"] = full_master
+            st.session_state.generated_master = full_master
             st.success("Master Supervision Generated ✅")
 
         except Exception as e:
             st.error(str(e))
 
     # ==================================================
-    # PREVIEW + DUTY SUMMARY
+    # PREVIEW + SUMMARY
     # ==================================================
 
     if "generated_master" in st.session_state:
 
         edited_master = st.data_editor(
-            st.session_state["generated_master"],
+            st.session_state.generated_master,
             use_container_width=True
         )
 
@@ -162,7 +210,6 @@ def run_auto_mode():
             .value_counts()
             .reset_index()
         )
-
         duty_summary.columns = ["Name of faculty", "Total Duties"]
 
         st.dataframe(duty_summary)
