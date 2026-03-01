@@ -1,141 +1,149 @@
 import pandas as pd
 from collections import defaultdict
-import random
 
 
-def generate_master_supervision(
+def allocate_single_block(
     teacher_df,
-    schedule_list,
-    supervisors_required,
-    avoid_list=None,
-    priority_list=None,
-    allow_two_duties=False,
+    block,
+    total_duty_count,
+    daily_duty_count,
+    allow_two_duties,
+    priority_list
 ):
     """
-    teacher_df: DataFrame with columns:
-        - 'Name of faculty'
-        - 'Department'
-
-    schedule_list: List of dictionaries:
-        [
-            {
-                "Date": "01-04-2026",
-                "Day": "Monday",
-                "Session": "FN",
-                "Time": "10:00 AM - 1:00 PM"
-            },
-            ...
-        ]
-
-    supervisors_required: int
-    avoid_list: list of teacher names to avoid
-    priority_list: list of teacher names to prioritize
-    allow_two_duties: bool
+    Allocates teachers for ONE allocation block
+    while maintaining global duty balance.
     """
 
-    if avoid_list is None:
-        avoid_list = []
+    assigned = []
 
-    if priority_list is None:
-        priority_list = []
+    date = block["Date"]
+    session = block["Session"]
+    time = block["Time"]
+    supervisors_required = block["Supervisors"]
+    avoid_list = block["Avoid"]
 
-    # Clean teacher list
-    teacher_df = teacher_df.copy()
-    teacher_df = teacher_df[~teacher_df["Name of faculty"].isin(avoid_list)]
-
-    teachers = teacher_df["Name of faculty"].tolist()
-
-    # Department mapping
     dept_map = dict(zip(teacher_df["Name of faculty"], teacher_df["Department"]))
 
-    # Track total duty count
-    total_duty_count = defaultdict(int)
+    all_teachers = teacher_df["Name of faculty"].tolist()
 
-    # Track daily duty count
-    daily_duty_count = defaultdict(lambda: defaultdict(int))
+    # Remove avoid teachers
+    eligible = [t for t in all_teachers if t not in avoid_list]
 
-    master_rows = []
+    # Daily limit filtering
+    filtered = []
+    for teacher in eligible:
+        if allow_two_duties:
+            if daily_duty_count[teacher][date] < 2:
+                filtered.append(teacher)
+        else:
+            if daily_duty_count[teacher][date] < 1:
+                filtered.append(teacher)
 
-    for session in schedule_list:
+    # Sort by total duty count (ascending)
+    filtered.sort(key=lambda x: total_duty_count[x])
 
-        date = session["Date"]
-        day = session["Day"]
-        session_name = session["Session"]
-        time = session["Time"]
+    # Move priority teachers to front (but still sorted among themselves)
+    priority = [t for t in filtered if t in priority_list]
+    normal = [t for t in filtered if t not in priority_list]
 
-        # Eligible teachers based on daily rule
-        eligible_teachers = []
+    priority.sort(key=lambda x: total_duty_count[x])
+    filtered = priority + normal
 
-        for teacher in teachers:
+    dept_assigned = defaultdict(int)
 
-            if allow_two_duties:
-                if daily_duty_count[teacher][date] < 2:
-                    eligible_teachers.append(teacher)
-            else:
-                if daily_duty_count[teacher][date] < 1:
-                    eligible_teachers.append(teacher)
+    # Department counts
+    dept_total = (
+        teacher_df.groupby("Department")["Name of faculty"]
+        .count()
+        .to_dict()
+    )
 
-        # Sort by total duties (approx equal distribution)
-        eligible_teachers.sort(key=lambda x: total_duty_count[x])
+    # First pass: Keep one teacher free per department
+    for teacher in filtered:
 
-        # Move priority teachers to front
-        priority_teachers = [t for t in eligible_teachers if t in priority_list]
-        normal_teachers = [t for t in eligible_teachers if t not in priority_list]
+        if len(assigned) >= supervisors_required:
+            break
 
-        eligible_teachers = priority_teachers + normal_teachers
+        dept = dept_map[teacher]
 
-        assigned = []
-        dept_assigned = defaultdict(int)
+        if dept_assigned[dept] < dept_total[dept] - 1:
+            assigned.append(teacher)
+            dept_assigned[dept] += 1
+            total_duty_count[teacher] += 1
+            daily_duty_count[teacher][date] += 1
 
-        # First Pass: Try keeping 1 per dept free
-        for teacher in eligible_teachers:
+    # Second pass: Relax department rule if needed
+    if len(assigned) < supervisors_required:
+        for teacher in filtered:
 
             if len(assigned) >= supervisors_required:
                 break
 
-            dept = dept_map[teacher]
-
-            # Count teachers in this dept
-            total_in_dept = teacher_df[teacher_df["Department"] == dept].shape[0]
-
-            # Ensure 1 teacher remains free
-            if dept_assigned[dept] < total_in_dept - 1:
+            if teacher not in assigned:
                 assigned.append(teacher)
-                dept_assigned[dept] += 1
                 total_duty_count[teacher] += 1
                 daily_duty_count[teacher][date] += 1
 
-        # Second Pass: Relax department rule if needed (Option A)
-        if len(assigned) < supervisors_required:
+    if len(assigned) < supervisors_required:
+        raise ValueError(
+            f"Not enough supervisors available for {date} - {session}"
+        )
 
-            for teacher in eligible_teachers:
+    rows = []
+    for teacher in assigned:
+        rows.append({
+            "Date": pd.to_datetime(date).strftime("%d-%m-%Y"),
+            "Day": pd.to_datetime(date).day_name(),
+            "Session": session,
+            "Time": time,
+            "Name of faculty": teacher,
+            "Department": dept_map[teacher]
+        })
 
-                if len(assigned) >= supervisors_required:
-                    break
+    return rows
 
-                if teacher not in assigned:
-                    assigned.append(teacher)
-                    total_duty_count[teacher] += 1
-                    daily_duty_count[teacher][date] += 1
 
-        # Final safety check
-        if len(assigned) < supervisors_required:
-            raise ValueError(
-                f"Not enough supervisors available for {date} {session_name}"
-            )
+def generate_master_supervision_global(
+    teacher_df,
+    allocation_blocks,
+    allow_two_duties=False,
+    priority_list=None
+):
+    """
+    allocation_blocks:
+    [
+        {
+            "Date": date,
+            "Session": session,
+            "Time": time,
+            "Supervisors": int,
+            "Avoid": [...]
+        },
+        ...
+    ]
+    """
 
-        # Add to master rows
-        for teacher in assigned:
-            master_rows.append(
-                {
-                    "Date": date,
-                    "Day": day,
-                    "Session": session_name,
-                    "Time": time,
-                    "Name of faculty": teacher,
-                    "Department": dept_map[teacher],
-                }
-            )
+    if priority_list is None:
+        priority_list = []
+
+    total_duty_count = defaultdict(int)
+    daily_duty_count = defaultdict(lambda: defaultdict(int))
+
+    master_rows = []
+
+    for block in allocation_blocks:
+
+        block_rows = allocate_single_block(
+            teacher_df,
+            block,
+            total_duty_count,
+            daily_duty_count,
+            allow_two_duties,
+            priority_list
+        )
+
+        master_rows.extend(block_rows)
 
     master_df = pd.DataFrame(master_rows)
 
