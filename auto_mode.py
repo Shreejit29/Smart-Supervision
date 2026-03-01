@@ -7,7 +7,6 @@ from schedule_builder import build_schedule
 from faculty_processor import extract_faculty_data
 import doc_generator
 from duty_allocator import generate_master_supervision_global
-from pixel_master_export import export_pixel_perfect
 
 
 def run_auto_mode():
@@ -36,9 +35,9 @@ def run_auto_mode():
 
     st.success("Faculty file loaded successfully ✅")
 
-    # ==============================
-    # SESSION TYPES
-    # ==============================
+    # ==================================================
+    # SESSION TYPES (Dynamic)
+    # ==================================================
 
     st.markdown("## Define Session Types")
 
@@ -75,9 +74,9 @@ def run_auto_mode():
         if s["name"]
     }
 
-    # ==============================
-    # ALLOCATION BLOCKS
-    # ==============================
+    # ==================================================
+    # ALLOCATION BLOCKS (Dynamic + Duplicate)
+    # ==================================================
 
     st.markdown("## Date-wise Allocation")
 
@@ -113,10 +112,12 @@ def run_auto_mode():
             key=f"session_{i}"
         )
 
+        # Delete Allocation
         if col3.button("❌", key=f"del_alloc_{i}"):
             st.session_state.allocations.pop(i)
             st.rerun()
 
+        # Duplicate Allocation
         if col4.button("📄", key=f"dup_alloc_{i}"):
             new_block = {
                 "date": block["date"],
@@ -151,9 +152,9 @@ def run_auto_mode():
         teacher_df["Name of faculty"].tolist()
     )
 
-    # ==============================
-    # GENERATE MASTER
-    # ==============================
+    # ==================================================
+    # GENERATE MASTER (Global Fair Balancing)
+    # ==================================================
 
     if st.button("Generate Master Supervision"):
 
@@ -191,9 +192,9 @@ def run_auto_mode():
         except Exception as e:
             st.error(str(e))
 
-    # ==============================
+    # ==================================================
     # PREVIEW + EXPORT
-    # ==============================
+    # ==================================================
 
     if "generated_master" in st.session_state:
 
@@ -213,16 +214,23 @@ def run_auto_mode():
 
         st.dataframe(duty_summary)
 
-        # Pixel Perfect Export
-        pixel_buffer = export_pixel_perfect(edited_master)
+        # -------- Normal Excel Export --------
+        sorted_master = edited_master.sort_values(
+            by=["Date", "Session", "Name of faculty"]
+        )
+
+        buffer = BytesIO()
+        sorted_master.to_excel(buffer, index=False)
+        buffer.seek(0)
 
         st.download_button(
-            label="📥 Download Master Supervision (Institution Format)",
-            data=pixel_buffer,
-            file_name="Master_Supervision_Pixel_Perfect.xlsx",
+            label="📥 Download Master Supervision (Excel)",
+            data=buffer,
+            file_name="Master_Supervision.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
+        # -------- Generate Individual Charts --------
         if st.button("Confirm & Generate Individual Charts"):
 
             analysis, error = analyze_excel(edited_master)
